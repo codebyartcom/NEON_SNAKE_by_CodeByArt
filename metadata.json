@@ -1,5 +1,5 @@
 {
-  "name": "Neon Snake",
-  "description": "A high-performance, aesthetically pleasing HTML5 Snake game with neon visuals and responsive controls.",
+  "name": "Neon Snake - CodeByArt",
+  "description": "A high-performance, single-file HTML5 Arcade game by CodeByArt. Features cyberpunk visuals, responsive mobile controls, and easy WordPress embedding.",
   "requestFramePermissions": []
 }

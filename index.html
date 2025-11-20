@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
+    <meta name="theme-color" content="#020617" />
+    <title>CodeByArt Snake Zone</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- React & Babel for Browser Execution -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+      /* Global Reset & Theme */
+      body {
+        margin: 0;
+        background-color: #020617;
+        background-image: 
+          linear-gradient(rgba(15, 23, 42, 0.9), rgba(2, 6, 23, 0.95)),
+          url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%231e293b' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        color: white;
+        font-family: 'Rajdhani', sans-serif;
+        overflow: hidden;
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      
+      /* CRT & Glass Effects */
+      .codebyart_scanlines {
+        background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+        background-size: 100% 4px;
+        position: absolute; inset: 0; pointer-events: none; z-index: 10;
+      }
+      .codebyart_screen-glow { box-shadow: inset 0 0 50px rgba(0,0,0,0.7); }
+      .codebyart_glass-panel {
+        background: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+    </style>
+</head>
+<body>
+    <div id="codebyart_game_root"></div>
+
+    <script type="text/babel">
+        /* =========================================
+           CONSTANTS & CONFIGURATION
+           ========================================= */
+        const CODEBYART_CANVAS_WIDTH = 900;
+        const CODEBYART_CANVAS_HEIGHT = 900;
+        const CODEBYART_GRID_SIZE = 30; 
+        const CODEBYART_COLS = CODEBYART_CANVAS_WIDTH / CODEBYART_GRID_SIZE;
+        const CODEBYART_ROWS = CODEBYART_CANVAS_HEIGHT / CODEBYART_GRID_SIZE;
+        const CODEBYART_LOGO_URL = "https://codebyart.com/wp-content/uploads/2025/10/CodeByArt-Logo.png";
+        const CODEBYART_MIN_SPEED = 60;
+
+        const CodeByArt_Difficulty = {
+            EASY: 'EASY',
+            MEDIUM: 'MEDIUM',
+            HARD: 'HARD',
+            INSANE: 'INSANE'
+        };
+
+        // Lower number = Faster Speed (Less delay between moves)
+        const CODEBYART_DIFFICULTY_CONFIG = {
+            [CodeByArt_Difficulty.EASY]: { speed: 350, increment: 2, scoreMultiplier: 1 },
+            [CodeByArt_Difficulty.MEDIUM]: { speed: 250, increment: 3, scoreMultiplier: 1.5 },
+            [CodeByArt_Difficulty.HARD]: { speed: 150, increment: 4, scoreMultiplier: 2 },
+            [CodeByArt_Difficulty.INSANE]: { speed: 90, increment: 5, scoreMultiplier: 3 },
+        };
+
+        const CODEBYART_THEMES = [
+            {
+                id: 'codebyart_theme_green', name: 'Green',
+                colors: { head: '#00ff9d', body: '#10b981', glow: '#00ff9d', food: '#ef4444', grid: '#1e293b' }
+            },
+            {
+                id: 'codebyart_theme_blue', name: 'Cyber Blue',
+                colors: { head: '#06b6d4', body: '#3b82f6', glow: '#22d3ee', food: '#f472b6', grid: '#172554' }
+            },
+            {
+                id: 'codebyart_theme_pink', name: 'Plasma Pink',
+                colors: { head: '#f472b6', body: '#be185d', glow: '#f472b6', food: '#22d3ee', grid: '#310b1e' }
+            },
+            {
+                id: 'codebyart_theme_gold', name: 'Gold Glitch',
+                colors: { head: '#facc15', body: '#ca8a04', glow: '#facc15', food: '#a855f7', grid: '#2d2a12' }
+            }
+        ];
+
+        const CodeByArt_Direction = { UP: 'UP', DOWN: 'DOWN', LEFT: 'LEFT', RIGHT: 'RIGHT' };
+        const CodeByArt_GameStatus = { IDLE: 'IDLE', PLAYING: 'PLAYING', PAUSED: 'PAUSED', GAME_OVER: 'GAME_OVER' };
+
+        /* =========================================
+           ICONS (Inline SVG to remove dependencies)
+           ========================================= */
+        const Icons = {
+            Play: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>,
+            Pause: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>,
+            RotateCcw: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>,
+            ChevronLeft: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="15 18 9 12 15 6"></polyline></svg>,
+            ChevronRight: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="9 18 15 12 9 6"></polyline></svg>,
+            Hexagon: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>,
+            Crosshair: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>,
+            Zap: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
+            Skull: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="M8 12a2 2 0 1 0 4 0 2 2 0 0 0-4 0z"></path><path d="M12 12a2 2 0 1 0 4 0 2 2 0 0 0-4 0z"></path><path d="M10 17a2 2 0 0 1 4 0"></path></svg>,
+            ArrowUp: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>,
+            ArrowDown: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>,
+            ArrowLeft: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>,
+            ArrowRight: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        };
+
+        /* =========================================
+           AUDIO CONTROLLER
+           ========================================= */
+        class CodeByArt_AudioController {
+            constructor() {
+                this.ctx = null;
+                try {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContextClass();
+                } catch (e) { console.error("Audio disabled"); }
+            }
+
+            playTone(freq, type, duration, vol = 0.1) {
+                if (!this.ctx) return;
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
+            }
+            playMove() { this.playTone(200, 'triangle', 0.05, 0.05); }
+            playEat() { 
+                this.playTone(600, 'sine', 0.1, 0.15);
+                setTimeout(() => this.playTone(900, 'sine', 0.2, 0.1), 50);
+            }
+            playDie() { 
+                this.playTone(150, 'sawtooth', 0.3, 0.2);
+                setTimeout(() => this.playTone(100, 'sawtooth', 0.4, 0.2), 100);
+            }
+            playStart() {
+                this.playTone(440, 'sine', 0.2, 0.1);
+                setTimeout(() => this.playTone(554, 'sine', 0.2, 0.1), 100);
+                setTimeout(() => this.playTone(659, 'sine', 0.4, 0.1), 200);
+            }
+        }
+        const codebyart_audio = new CodeByArt_AudioController();
+
+        /* =========================================
+           COMPONENTS
+           ========================================= */
+        
+        // SCOREBOARD
+        const CodeByArt_ScoreBoard = ({ score, highScore }) => {
+            return (
+                <div className="w-full max-w-[600px] flex justify-between items-center px-6 py-3 bg-slate-900/80 backdrop-blur-md rounded-xl border border-slate-700/50 shadow-[0_4px_20px_rgba(0,0,0,0.4)] mb-4 relative z-10 group hover:border-slate-600 transition-colors">
+                    <div className="flex items-center gap-4">
+                        <div className="flex flex-col">
+                            <span className="text-slate-500 text-[10px] font-bold tracking-widest uppercase group-hover:text-cyan-400 transition-colors">Score</span>
+                            <span className="text-3xl font-bold font-['Orbitron'] text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] leading-none tabular-nums">
+                                {score.toString().padStart(3, '0')}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="hidden sm:flex gap-2 opacity-20">
+                        <div className="w-2 h-2 bg-white rounded-full"></div>
+                        <div className="w-2 h-2 bg-white rounded-full"></div>
+                        <div className="w-2 h-2 bg-white rounded-full"></div>
+                    </div>
+                    <div className="flex items-center gap-4 text-right">
+                        <div className="flex flex-col items-end">
+                            <span className="text-slate-500 text-[10px] font-bold tracking-widest uppercase group-hover:text-purple-400 transition-colors">Best</span>
+                            <span className="text-3xl font-bold font-['Orbitron'] text-purple-400 drop-shadow-[0_0_10px_rgba(192,132,252,0.3)] leading-none tabular-nums">
+                                {highScore.toString().padStart(3, '0')}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // MOBILE CONTROLS
+        const CodeByArt_MobileControls = ({ onDirectionChange }) => {
+            const handlePress = (dir) => {
+                if (navigator.vibrate) navigator.vibrate(15);
+                codebyart_audio.playMove();
+                onDirectionChange(dir);
+            };
+            const btnClass = "relative group overflow-hidden bg-slate-800/90 active:bg-cyan-600 active:scale-95 transition-all duration-100 rounded-2xl backdrop-blur-md border-b-4 border-slate-950 active:border-b-0 active:translate-y-1 shadow-lg flex items-center justify-center h-16 w-full touch-manipulation select-none";
+            const iconClass = "text-slate-300 group-active:text-white transition-colors";
+
+            return (
+                <div className="w-full grid grid-rows-2 grid-cols-3 gap-3 px-2">
+                    <div className="col-start-2">
+                        <button className={btnClass} onPointerDown={(e) => { e.preventDefault(); handlePress(CodeByArt_Direction.UP); }}>
+                            <Icons.ArrowUp size={32} className={iconClass} />
+                        </button>
+                    </div>
+                    <div className="row-start-2 col-start-1">
+                        <button className={btnClass} onPointerDown={(e) => { e.preventDefault(); handlePress(CodeByArt_Direction.LEFT); }}>
+                            <Icons.ArrowLeft size={32} className={iconClass} />
+                        </button>
+                    </div>
+                    <div className="row-start-2 col-start-2">
+                        <button className={btnClass} onPointerDown={(e) => { e.preventDefault(); handlePress(CodeByArt_Direction.DOWN); }}>
+                            <Icons.ArrowDown size={32} className={iconClass} />
+                        </button>
+                    </div>
+                    <div className="row-start-2 col-start-3">
+                        <button className={btnClass} onPointerDown={(e) => { e.preventDefault(); handlePress(CodeByArt_Direction.RIGHT); }}>
+                            <Icons.ArrowRight size={32} className={iconClass} />
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // GAME CANVAS
+        const CodeByArt_GameCanvas = ({ gameState, setGameState }) => {
+            const canvasRef = React.useRef(null);
+            const requestRef = React.useRef();
+            const lastTimeRef = React.useRef(0);
+            
+            const getRandomPos = () => ({
+                x: Math.floor(Math.random() * CODEBYART_COLS),
+                y: Math.floor(Math.random() * CODEBYART_ROWS),
+            });
+
+            const gameTick = React.useCallback(() => {
+                setGameState((prev) => {
+                    if (prev.status !== CodeByArt_GameStatus.PLAYING) return prev;
+
+                    const head = prev.snake[0];
+                    const newHead = { ...head };
+
+                    switch (prev.nextDirection) {
+                        case CodeByArt_Direction.UP: newHead.y -= 1; break;
+                        case CodeByArt_Direction.DOWN: newHead.y += 1; break;
+                        case CodeByArt_Direction.LEFT: newHead.x -= 1; break;
+                        case CodeByArt_Direction.RIGHT: newHead.x += 1; break;
+                    }
+
+                    // Collision checks
+                    if (newHead.x < 0 || newHead.x >= CODEBYART_COLS || newHead.y < 0 || newHead.y >= CODEBYART_ROWS || prev.snake.some(segment => segment.x === newHead.x && segment.y === newHead.y)) {
+                        codebyart_audio.playDie();
+                        return { ...prev, status: CodeByArt_GameStatus.GAME_OVER };
+                    }
+
+                    const newSnake = [newHead, ...prev.snake];
+                    let newFood = prev.food;
+                    let newScore = prev.score;
+                    let newSpeed = prev.speed;
+                    const config = CODEBYART_DIFFICULTY_CONFIG[prev.difficulty];
+
+                    if (newHead.x === prev.food.x && newHead.y === prev.food.y) {
+                        codebyart_audio.playEat();
+                        newScore += 10 * config.scoreMultiplier;
+                        if (newSpeed > CODEBYART_MIN_SPEED) newSpeed = Math.max(CODEBYART_MIN_SPEED, prev.speed - config.increment);
+                        
+                        let validFood = false;
+                        while (!validFood) {
+                            const candidate = getRandomPos();
+                            if (!newSnake.some(s => s.x === candidate.x && s.y === candidate.y)) {
+                                newFood = candidate;
+                                validFood = true;
+                            }
+                        }
+                    } else {
+                        newSnake.pop();
+                    }
+
+                    return {
+                        ...prev,
+                        snake: newSnake,
+                        food: newFood,
+                        score: newScore,
+                        highScore: Math.max(newScore, prev.highScore),
+                        direction: prev.nextDirection,
+                        speed: newSpeed,
+                    };
+                });
+            }, [setGameState]);
+
+            React.useEffect(() => {
+                const animate = (time) => {
+                    if (gameState.status === CodeByArt_GameStatus.PLAYING) {
+                        if (time - lastTimeRef.current >= gameState.speed) {
+                            gameTick();
+                            lastTimeRef.current = time;
+                        }
+                    }
+                    draw(canvasRef.current, gameState, time);
+                    requestRef.current = requestAnimationFrame(animate);
+                };
+                requestRef.current = requestAnimationFrame(animate);
+                return () => cancelAnimationFrame(requestRef.current);
+            }, [gameState, gameTick]);
+
+            const draw = (canvas, state, time) => {
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+
+                const { theme } = state;
+                ctx.clearRect(0, 0, CODEBYART_CANVAS_WIDTH, CODEBYART_CANVAS_HEIGHT);
+                
+                // Grid
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = theme.colors.grid;
+                ctx.beginPath();
+                for (let i = 0; i <= CODEBYART_COLS; i++) { ctx.moveTo(i * CODEBYART_GRID_SIZE, 0); ctx.lineTo(i * CODEBYART_GRID_SIZE, CODEBYART_CANVAS_HEIGHT); }
+                for (let i = 0; i <= CODEBYART_ROWS; i++) { ctx.moveTo(0, i * CODEBYART_GRID_SIZE); ctx.lineTo(CODEBYART_CANVAS_WIDTH, i * CODEBYART_GRID_SIZE); }
+                ctx.stroke();
+
+                // Snake
+                state.snake.forEach((segment, index) => {
+                    const isHead = index === 0;
+                    ctx.shadowBlur = isHead ? 20 : 0;
+                    ctx.shadowColor = theme.colors.glow;
+                    ctx.fillStyle = isHead ? theme.colors.head : theme.colors.body;
+                    const padding = 1.5;
+                    const size = CODEBYART_GRID_SIZE - (padding * 2);
+                    
+                    ctx.beginPath();
+                    ctx.roundRect(segment.x * CODEBYART_GRID_SIZE + padding, segment.y * CODEBYART_GRID_SIZE + padding, size, size, 4);
+                    ctx.fill();
+
+                    if (isHead) {
+                        ctx.shadowBlur = 0;
+                        ctx.fillStyle = '#000';
+                        const eyeSize = 3;
+                        const hx = segment.x * CODEBYART_GRID_SIZE, hy = segment.y * CODEBYART_GRID_SIZE;
+                        let lx=0,ly=0,rx=0,ry=0;
+                        if (state.direction === CodeByArt_Direction.UP) { lx=hx+5; ly=hy+5; rx=hx+12; ry=hy+5; }
+                        else if (state.direction === CodeByArt_Direction.DOWN) { lx=hx+5; ly=hy+12; rx=hx+12; ry=hy+12; }
+                        else if (state.direction === CodeByArt_Direction.LEFT) { lx=hx+5; ly=hy+5; rx=hx+5; ry=hy+12; }
+                        else { lx=hx+12; ly=hy+5; rx=hx+12; ry=hy+12; }
+                        ctx.fillRect(lx, ly, eyeSize, eyeSize);
+                        ctx.fillRect(rx, ry, eyeSize, eyeSize);
+                    }
+                });
+
+                // Food
+                const pulse = 1 + Math.sin(time / 150) * 0.15;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = theme.colors.food;
+                ctx.fillStyle = theme.colors.food;
+                ctx.beginPath();
+                ctx.arc(state.food.x * CODEBYART_GRID_SIZE + CODEBYART_GRID_SIZE/2, state.food.y * CODEBYART_GRID_SIZE + CODEBYART_GRID_SIZE/2, (CODEBYART_GRID_SIZE/2 - 3) * pulse, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            };
+
+            return (
+                <canvas
+                    ref={canvasRef}
+                    width={CODEBYART_CANVAS_WIDTH}
+                    height={CODEBYART_CANVAS_HEIGHT}
+                    className="w-full h-full object-contain rounded-lg shadow-2xl border border-slate-700 bg-slate-950/80"
+                    style={{ imageRendering: 'pixelated', boxShadow: `0 0 40px -10px ${gameState.theme.colors.glow}40` }}
+                />
+            );
+        };
+
+        // MAIN APP
+        const CodeByArt_App = () => {
+            const getInitialState = (difficulty, theme) => ({
+                snake: [{ x: 10, y: 10 }, { x: 10, y: 11 }, { x: 10, y: 12 }],
+                food: { x: 15, y: 5 },
+                direction: CodeByArt_Direction.UP,
+                nextDirection: CodeByArt_Direction.UP,
+                score: 0,
+                highScore: parseInt(localStorage.getItem(`codebyart_snake_highscore_${difficulty}`) || '0', 10),
+                status: CodeByArt_GameStatus.IDLE,
+                speed: CODEBYART_DIFFICULTY_CONFIG[difficulty].speed,
+                difficulty,
+                theme,
+            });
+
+            const [selectedDifficulty, setSelectedDifficulty] = React.useState(CodeByArt_Difficulty.MEDIUM);
+            const [selectedThemeIndex, setSelectedThemeIndex] = React.useState(0);
+            const selectedTheme = CODEBYART_THEMES[selectedThemeIndex];
+            const [gameState, setGameState] = React.useState(getInitialState(CodeByArt_Difficulty.MEDIUM, CODEBYART_THEMES[0]));
+            const [isMobile, setIsMobile] = React.useState(false);
+
+            React.useEffect(() => {
+                const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+                checkMobile();
+                window.addEventListener('resize', checkMobile);
+                return () => window.removeEventListener('resize', checkMobile);
+            }, []);
+
+            React.useEffect(() => {
+                if (gameState.score > gameState.highScore) {
+                    localStorage.setItem(`codebyart_snake_highscore_${gameState.difficulty}`, gameState.score.toString());
+                }
+            }, [gameState.score, gameState.highScore, gameState.difficulty]);
+
+            const handleDirection = React.useCallback((newDir) => {
+                setGameState((prev) => {
+                    if (prev.status !== CodeByArt_GameStatus.PLAYING) return prev;
+                    const currentDir = prev.direction;
+                    const isOpposite = (newDir === CodeByArt_Direction.UP && currentDir === CodeByArt_Direction.DOWN) || (newDir === CodeByArt_Direction.DOWN && currentDir === CodeByArt_Direction.UP) || (newDir === CodeByArt_Direction.LEFT && currentDir === CodeByArt_Direction.RIGHT) || (newDir === CodeByArt_Direction.RIGHT && currentDir === CodeByArt_Direction.LEFT);
+                    if (isOpposite) return prev;
+                    return { ...prev, nextDirection: newDir };
+                });
+            }, []);
+
+            React.useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault();
+                    if (gameState.status === CodeByArt_GameStatus.IDLE || gameState.status === CodeByArt_GameStatus.GAME_OVER) {
+                        if (e.key === 'Enter' || e.key === ' ') startGame();
+                        return;
+                    }
+                    switch (e.key) {
+                        case 'ArrowUp': handleDirection(CodeByArt_Direction.UP); break;
+                        case 'ArrowDown': handleDirection(CodeByArt_Direction.DOWN); break;
+                        case 'ArrowLeft': handleDirection(CodeByArt_Direction.LEFT); break;
+                        case 'ArrowRight': handleDirection(CodeByArt_Direction.RIGHT); break;
+                        case ' ': togglePause(); break;
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [gameState.status, handleDirection, selectedDifficulty, selectedThemeIndex]);
+
+            const startGame = () => {
+                codebyart_audio.playStart();
+                setGameState({
+                    ...getInitialState(selectedDifficulty, selectedTheme),
+                    highScore: parseInt(localStorage.getItem(`codebyart_snake_highscore_${selectedDifficulty}`) || '0', 10),
+                    status: CodeByArt_GameStatus.PLAYING,
+                });
+            };
+
+            const togglePause = () => {
+                setGameState(prev => ({
+                    ...prev,
+                    status: prev.status === CodeByArt_GameStatus.PLAYING ? CodeByArt_GameStatus.PAUSED : CodeByArt_GameStatus.PLAYING
+                }));
+            };
+
+            const cycleTheme = (dir) => {
+                codebyart_audio.playMove();
+                if (dir === 'next') setSelectedThemeIndex((prev) => (prev + 1) % CODEBYART_THEMES.length);
+                else setSelectedThemeIndex((prev) => (prev - 1 + CODEBYART_THEMES.length) % CODEBYART_THEMES.length);
+            };
+
+            return (
+                <div className="fixed inset-0 w-full h-[100dvh] flex flex-col items-center overflow-hidden font-['Rajdhani'] text-white selection:bg-cyan-500/30">
+                    <header className="flex-none pt-4 pb-2 w-full flex flex-col items-center z-20 px-4">
+                        <div className="flex items-center justify-center gap-4 mb-1 w-full relative">
+                            <div className="hidden md:block h-px bg-gradient-to-r from-transparent to-slate-700 w-24"></div>
+                            <div className="flex items-center gap-3">
+                                <img src={CODEBYART_LOGO_URL} alt="CodeByArt" className="h-8 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
+                                <h1 className="text-xl md:text-2xl font-['Orbitron'] font-black tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-br from-white to-slate-400">
+                                    NEON<span className="text-cyan-500">SNAKE</span>
+                                </h1>
+                            </div>
+                            <div className="hidden md:block h-px bg-gradient-to-l from-transparent to-slate-700 w-24"></div>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 w-full flex flex-col items-center justify-center relative min-h-0 px-4 pb-2">
+                        <CodeByArt_ScoreBoard score={gameState.score} highScore={gameState.highScore} />
+                        <div className="relative aspect-square flex-1 min-h-0 shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-xl bg-slate-800 p-[2px] group max-h-[80vh]">
+                            <div className="absolute -inset-[2px] bg-gradient-to-b from-slate-700 to-slate-900 rounded-xl -z-10"></div>
+                            <div className="w-full h-full bg-slate-950 rounded-[10px] overflow-hidden relative border-4 border-slate-900 shadow-inner">
+                                <div className="codebyart_scanlines z-10 pointer-events-none"></div>
+                                <div className="codebyart_screen-glow absolute inset-0 z-10 pointer-events-none"></div>
+                                <CodeByArt_GameCanvas gameState={gameState} setGameState={setGameState} />
+
+                                {gameState.status === CodeByArt_GameStatus.IDLE && (
+                                    <div className="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                                        <div className="w-full max-w-[340px] codebyart_glass-panel rounded-2xl p-6 flex flex-col gap-5 border border-slate-700/50 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+                                            <div className="text-center border-b border-slate-700/50 pb-4">
+                                                <h2 className="text-2xl font-['Orbitron'] font-bold text-white mb-1 tracking-widest">SYSTEM READY</h2>
+                                                <p className="text-xs text-cyan-500 font-mono tracking-widest animate-pulse">CLICK INITIALIZE TO PLAY</p>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex justify-between">
+                                                    <span>Security Level</span>
+                                                    <span className="text-slate-300">{selectedDifficulty}</span>
+                                                </label>
+                                                <div className="grid grid-cols-4 gap-1 bg-slate-900/50 p-1 rounded-lg border border-slate-800">
+                                                    {Object.keys(CodeByArt_Difficulty).map((diff) => (
+                                                        <button key={diff} onClick={() => { setSelectedDifficulty(diff); codebyart_audio.playMove(); }} className={`h-9 rounded-md flex items-center justify-center transition-all duration-200 ${selectedDifficulty === diff ? 'bg-gradient-to-b from-cyan-600 to-cyan-800 text-white shadow-lg shadow-cyan-900/50' : 'text-slate-600 hover:bg-slate-800 hover:text-slate-400'}`}>
+                                                            {diff === 'EASY' && <Icons.Hexagon size={14} />}
+                                                            {diff === 'MEDIUM' && <Icons.Crosshair size={14} />}
+                                                            {diff === 'HARD' && <Icons.Zap size={14} />}
+                                                            {diff === 'INSANE' && <Icons.Skull size={14} />}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Visual Interface</label>
+                                                <div className="flex items-center justify-between bg-slate-900/50 rounded-lg border border-slate-800 p-1">
+                                                    <button onClick={() => cycleTheme('prev')} className="w-10 h-10 flex items-center justify-center hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"><Icons.ChevronLeft size={20} /></button>
+                                                    <div className="flex-1 flex flex-col items-center gap-1">
+                                                        <span className="font-['Orbitron'] font-bold text-sm" style={{ color: selectedTheme.colors.head }}>{selectedTheme.name}</span>
+                                                        <div className="flex gap-1.5">
+                                                            <div className="w-2 h-2 rounded-sm shadow-[0_0_5px]" style={{ background: selectedTheme.colors.head, boxShadow: `0 0 5px ${selectedTheme.colors.head}` }}></div>
+                                                            <div className="w-2 h-2 rounded-sm opacity-50" style={{ background: selectedTheme.colors.body }}></div>
+                                                        </div>
+                                                    </div>
+                                                    <button onClick={() => cycleTheme('next')} className="w-10 h-10 flex items-center justify-center hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"><Icons.ChevronRight size={20} /></button>
+                                                </div>
+                                            </div>
+                                            <button onClick={startGame} className="w-full mt-2 py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-['Orbitron'] font-bold text-lg uppercase tracking-widest rounded-xl shadow-[0_0_20px_rgba(8,145,178,0.4)] transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 group/btn relative overflow-hidden">
+                                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-[100%] group-hover/btn:translate-x-[100%] transition-transform duration-700"></div>
+                                                <Icons.Play size={20} fill="currentColor" />
+                                                <span>INITIALIZE</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {gameState.status === CodeByArt_GameStatus.PAUSED && (
+                                    <div className="absolute inset-0 z-30 bg-slate-950/60 backdrop-blur-[4px] flex items-center justify-center">
+                                        <div className="bg-slate-900 border border-yellow-500/30 p-8 rounded-xl shadow-[0_0_30px_rgba(234,179,8,0.1)] flex flex-col items-center animate-in zoom-in-95 duration-200">
+                                            <h2 className="text-3xl font-['Orbitron'] font-bold text-yellow-500 mb-6 tracking-[0.2em]">PAUSED</h2>
+                                            <div className="flex flex-col gap-3 w-48">
+                                                <button onClick={togglePause} className="py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded border border-slate-700 flex items-center justify-center gap-2"><Icons.Play size={16} fill="currentColor"/> RESUME</button>
+                                                <button onClick={() => setGameState(prev => ({ ...prev, status: CodeByArt_GameStatus.IDLE }))} className="py-3 bg-transparent hover:bg-slate-800/50 text-slate-400 hover:text-red-400 font-bold rounded border border-transparent hover:border-red-900/50 transition-colors">ABORT</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {gameState.status === CodeByArt_GameStatus.GAME_OVER && (
+                                    <div className="absolute inset-0 z-30 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+                                        <div className="w-full max-w-[320px] flex flex-col items-center text-center relative">
+                                            <div className="mb-8 relative">
+                                                <h2 className="text-5xl font-['Orbitron'] font-black text-red-600 drop-shadow-[0_0_15px_rgba(220,38,38,0.8)] tracking-tighter animate-pulse">GAME<br/>OVER</h2>
+                                                <div className="h-px w-full bg-gradient-to-r from-transparent via-red-500 to-transparent mt-2"></div>
+                                            </div>
+                                            <div className="flex gap-3 w-full mb-8">
+                                                <div className="flex-1 codebyart_glass-panel p-3 rounded-lg flex flex-col items-center border-l-2 border-l-slate-600">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase mb-1 tracking-wider">Score</span>
+                                                    <span className="text-2xl font-['Orbitron'] text-white">{gameState.score}</span>
+                                                </div>
+                                                <div className="flex-1 codebyart_glass-panel p-3 rounded-lg flex flex-col items-center border-l-2 border-l-purple-500 relative overflow-hidden">
+                                                    {gameState.score >= gameState.highScore && gameState.score > 0 && (
+                                                        <div className="absolute top-0 right-0 w-2 h-2 bg-yellow-400 rounded-full shadow-[0_0_8px_yellow] animate-ping"></div>
+                                                    )}
+                                                    <span className="text-[10px] text-purple-300 font-bold uppercase mb-1 tracking-wider">Best</span>
+                                                    <span className="text-2xl font-['Orbitron'] text-purple-400">{gameState.highScore}</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col gap-3 w-full">
+                                                <button onClick={startGame} className="w-full py-4 bg-red-600 hover:bg-red-500 text-white font-['Orbitron'] font-bold text-lg uppercase tracking-widest rounded-xl shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-all hover:scale-[1.02] flex items-center justify-center gap-2 group"><Icons.RotateCcw size={20} className="group-hover:-rotate-180 transition-transform duration-500" /> RETRY</button>
+                                                <button onClick={() => setGameState(prev => ({ ...prev, status: CodeByArt_GameStatus.IDLE }))} className="w-full py-3 text-slate-500 hover:text-white font-bold text-sm uppercase tracking-widest transition-colors">Return to Base</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </main>
+
+                    <footer className="flex-none w-full pb-8 md:pb-4 px-4 z-20 flex justify-center items-start min-h-[120px]">
+                        {isMobile ? (
+                            <div className="w-full max-w-md mt-2">
+                                <CodeByArt_MobileControls onDirectionChange={handleDirection} />
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-8 opacity-60 hover:opacity-100 transition-opacity duration-300">
+                                <div className="flex gap-2 text-slate-400 font-mono text-xs uppercase tracking-wider">
+                                    <span className="px-2 py-1 border border-slate-700 rounded bg-slate-900/50">Arrows</span>
+                                    <span className="self-center">Move</span>
+                                </div>
+                                <div className="w-px h-4 bg-slate-700"></div>
+                                <div className="flex gap-2 text-slate-400 font-mono text-xs uppercase tracking-wider">
+                                    <span className="px-2 py-1 border border-slate-700 rounded bg-slate-900/50">Space</span>
+                                    <span className="self-center">Pause</span>
+                                </div>
+                            </div>
+                        )}
+                    </footer>
+
+                    {isMobile && gameState.status === CodeByArt_GameStatus.PLAYING && (
+                        <button onClick={togglePause} className="absolute top-5 right-4 p-2 bg-slate-900/80 backdrop-blur-md rounded-lg text-slate-400 border border-slate-700 active:bg-slate-800 z-50 shadow-lg">
+                            <Icons.Pause size={20} fill="currentColor" />
+                        </button>
+                    )}
+                </div>
+            );
+        };
+
+        const codebyart_root = ReactDOM.createRoot(document.getElementById('codebyart_game_root'));
+        codebyart_root.render(<CodeByArt_App />);
+    </script>
+</body>
+</html>
